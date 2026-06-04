@@ -1,0 +1,27 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Project-local Claude/agent instructions (contain personal config: email, vault paths)
+claude.md
+CLAUDE.md
+.claude/
+
+# OptiProof ephemeral harness artifacts (normally only created in temp workspaces)
+optiproofgen_*
+__optiproof_*
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
