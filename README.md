@@ -48,6 +48,18 @@ its own. A run reports the measured speedup, the 95% CI, the correctness evidenc
 (existing tests + N differential inputs identical), and the diff — or an honest
 "no verified improvement" with the best *rejected* candidate and why.
 
+## Use it from Claude Code (no API key)
+
+You don't need an Anthropic API key — two subscription-friendly paths:
+
+- **`prove` (agent-driven):** Claude Code writes the candidate implementations; the harness
+  proves them. `optiproof prove FILE::FUNC cand1.py cand2.py [--sandbox docker] [--apply]`.
+  A bundled **`optiproof` skill** (`.claude/skills/optiproof/`) wires this up, so you can just
+  say *"optimize this function"* in Claude Code and it runs the loop.
+- **`--provider claude-code`:** `optimize` shells out to the logged-in `claude` CLI instead of
+  the API, using your Claude Code subscription. (`--provider` defaults to `auto`: API key if set,
+  else the `claude` CLI, else `null` for tests.)
+
 ## How it works
 
 The agent loop (`optiproof/orchestrator.py`), measure → generate → prove:

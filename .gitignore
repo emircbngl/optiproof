@@ -14,7 +14,10 @@ dist/
 # Project-local Claude/agent instructions (contain personal config: email, vault paths)
 claude.md
 CLAUDE.md
-.claude/
+.claude/settings.json
+.claude/settings.local.json
+.claude/*.local.json
+# (the shipped skill under .claude/skills/ IS tracked)
 
 # OptiProof ephemeral harness artifacts (normally only created in temp workspaces)
 optiproofgen_*

@@ -247,3 +247,22 @@ def test_anti_luck_discards_when_reconfirm_fails(monkeypatch):
     res = orch.optimize(req, provider=NullProvider(candidates=[fast]))
     assert not res.improved
     assert any("re-measure" in n for n in res.notes)
+
+
+# ---- workspace gather is safe (no blind copytree of an arbitrary parent) ----------
+def test_workspace_gather_is_safe_and_targeted(tmp_path):
+    import os
+    from optiproof.sandbox.workspace import Workspace
+
+    (tmp_path / "mod.py").write_text("def f(x):\n    return x\n")
+    (tmp_path / "helper.py").write_text("X = 1\n")        # same-language sibling -> copied
+    (tmp_path / "big.bin").write_bytes(b"0" * 4096)       # non-source -> NOT copied
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "deep.py").write_text("Y = 1\n")  # subdir -> NOT recursed into
+    ws = Workspace.fork_from_file(tmp_path / "mod.py")
+    try:
+        names = set(os.listdir(ws.root))
+        assert {"mod.py", "helper.py"} <= names
+        assert "big.bin" not in names and "sub" not in names
+    finally:
+        ws.cleanup()

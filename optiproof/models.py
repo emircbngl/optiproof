@@ -57,7 +57,7 @@ class OptimizeRequest(BaseModel):
     # plumbing
     sandbox: SandboxBackend = SandboxBackend.LOCAL
     toolchain_image: Optional[str] = None  # Docker image for the docker backend
-    provider: str = "anthropic"         # or "null" (deterministic, for tests)
+    provider: str = "auto"              # auto: claude-code (subscription) if no API key, else anthropic; or "null"
     model: Optional[str] = None
     budget_usd: Optional[float] = None
 
