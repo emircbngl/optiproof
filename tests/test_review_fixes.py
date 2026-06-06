@@ -311,13 +311,26 @@ def test_valid_optimization_accepted_with_mixed_inputs():
     assert res.improved and res.best and res.best.id == "fast"
 
 
-def test_scalar_target_is_unbenchmarkable():
-    # A scalar param the generator can't infer gets a list -> original raises on all inputs ->
-    # clear UNBENCHMARKABLE status instead of a confusing traceback.
+def test_probe_resolves_scalar_and_stays_sound():
+    # #4: `rho` is an un-inferrable scalar; probing the original discovers it's a scalar (so the
+    # function is MEASURABLE, not UNBENCHMARKABLE) and still tests it with int+float, so an
+    # int-truncating candidate is rejected.
+    original = "def quant(rho):\n    return rho * rho + rho\n"
+    trap = "def quant(rho):\n    return int(rho) * int(rho) + int(rho)"  # correct on ints, wrong on floats
+    res = _run_opt(original, "quant", [("trap", trap)])
+    assert not res.unbenchmarkable
+    assert "int+float" in res.inputs_tested  # probe -> num -> int+float reported
+    reasons = {r.id: r.reason for r in res.rejected}
+    assert "trap" in reasons and "behavior changed" in reasons["trap"].lower()
+
+
+def test_uninferrable_param_is_unbenchmarkable():
+    # `cfg` must be a dict with key "k" — no probe candidate (scalar/list/str/bool) satisfies it,
+    # so the original raises on all inputs -> clear UNBENCHMARKABLE, not a confusing traceback.
     res = _run_opt(
-        "def scale(rho):\n    return rho * 2.0 + 1.0\n",
-        "scale",
-        [("c", "def scale(rho):\n    return rho * 2.0 + 1.0\n")],
+        'def lookup(cfg):\n    return cfg["k"] * 2\n',
+        "lookup",
+        [("c", 'def lookup(cfg):\n    return cfg["k"] * 2\n')],
     )
     assert res.unbenchmarkable
     assert any("UNBENCHMARKABLE" in n for n in res.notes)

@@ -95,6 +95,8 @@ def gen_value(tag: str, r: random.Random, size: int):
         return r.randint(0, 18)            # small + non-negative so slow originals still terminate
     if tag == "float":
         return round(r.uniform(-50, 50), 6)
+    if tag == "num":  # ambiguous scalar (normally resolved per-input in generate_inputs)
+        return round(r.uniform(-50, 50), 6)
     if tag == "bool":
         return r.choice([True, False])
     if tag == "str":
@@ -118,18 +120,21 @@ def _tags(target: Target) -> list[str]:
     return [infer_tag(ann, name) for name, ann in target.param_types.items()]
 
 
-def generate_inputs(target: Target, seed: int = 1234, n: int = 200, size: int = 40) -> list[tuple]:
-    tags = _tags(target)
+def generate_inputs(target: Target, seed: int = 1234, n: int = 200, size: int = 40,
+                    tags: list[str] | None = None) -> list[tuple]:
+    tags = tags if tags is not None else _tags(target)
     if not tags:
         return [()]  # no-arg function: a single empty call
     r = random.Random(seed)
 
     def draw(tag: str, sz: int, idx: int):
-        # Ambiguous numeric list: alternate int / float by input index so the differential
-        # spans BOTH domains (catches a candidate that's correct on ints but wrong on floats,
-        # while keeping ints so genuinely int-only functions aren't falsely rejected).
+        # Ambiguous numeric param: alternate int / float by input index so the differential spans
+        # BOTH domains (catches a candidate correct on ints but wrong on floats, while keeping ints
+        # so genuinely int-only functions aren't falsely rejected).
         if tag == "list_num":
             return gen_value("list_float" if idx % 2 else "list_int", r, sz)
+        if tag == "num":
+            return gen_value("float" if idx % 2 else "int", r, sz)
         return gen_value(tag, r, sz)
 
     inputs: list[tuple] = []
@@ -143,14 +148,15 @@ def generate_inputs(target: Target, seed: int = 1234, n: int = 200, size: int = 
     return inputs[:n]
 
 
-def make_workload(target: Target, seed: int = 1234, big: int = 1200) -> tuple:
-    tags = _tags(target)
+def make_workload(target: Target, seed: int = 1234, big: int = 1200,
+                  tags: list[str] | None = None) -> tuple:
+    tags = tags if tags is not None else _tags(target)
     if not tags:
         return ()
     r = random.Random(seed + 999)
     vals = []
     for t in tags:
-        if t == "int":
+        if t == "int" or t == "num":
             vals.append(26)                            # moderate: cheap for exp, autoranged for poly
         elif t == "float":
             vals.append(round(r.uniform(-1000, 1000), 6))
@@ -175,6 +181,7 @@ def make_workload(target: Target, seed: int = 1234, big: int = 1200) -> tuple:
 
 _TAG_DESC = {
     "list_num": "numeric list (int+float)",
+    "num": "number (int+float)",
     "list_int": "int list",
     "list_float": "float list",
     "list_str": "str list",
@@ -186,8 +193,20 @@ _TAG_DESC = {
     "bool": "bool",
 }
 
+_RECOGNIZED_NAMES = _INT_NAMES | _STR_NAMES | _BOOL_NAMES | _LIST_NAMES
 
-def describe_inputs(target: Target) -> str:
+
+def prior_tags(target: Target) -> list[str]:
+    """Annotation/name-based tag per parameter (the prior, before any probing)."""
+    return _tags(target)
+
+
+def is_ambiguous(name: str, annotation: str) -> bool:
+    """A parameter we cannot pin down: no annotation AND an unrecognized name -> worth probing."""
+    return not annotation and name.lower() not in _RECOGNIZED_NAMES
+
+
+def describe_inputs(target: Target, tags: list[str] | None = None) -> str:
     """Human summary of the input domain the harness will test (for the report).
 
     Flags parameters whose type was *guessed* (unannotated) — so a domain mismatch
@@ -195,8 +214,9 @@ def describe_inputs(target: Target) -> str:
     """
     if not target.param_types:
         return "(no args)"
+    resolved = tags if tags is not None else _tags(target)
     parts = []
-    for name, ann in target.param_types.items():
-        desc = _TAG_DESC.get(infer_tag(ann, name), "value")
+    for (name, ann), tag in zip(target.param_types.items(), resolved):
+        desc = _TAG_DESC.get(tag, "value")
         parts.append(f"{name}={desc}" + ("" if ann else " [guessed]"))
     return ", ".join(parts)

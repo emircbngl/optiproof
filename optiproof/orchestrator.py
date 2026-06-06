@@ -29,6 +29,7 @@ from .scorer import better_of
 from .verify.correctness import check_candidate
 from .verify.differential import BaselineBehavior, record_baseline
 from .verify.input_gen import describe_inputs, generate_inputs, make_workload
+from .verify.probe import probe_tags
 
 
 def _first_line(text: str) -> str:
@@ -127,8 +128,11 @@ def optimize(request: OptimizeRequest, provider: Optional[LLMProvider] = None) -
             result.notes = ["original's own tests fail — refusing to optimize broken code"]
             return result
 
-        inputs = generate_inputs(target, seed=request.seed, n=request.num_diff_inputs)
-        workload = make_workload(target, seed=request.seed, big=request.workload_size)
+        # Probe the original to pin down ambiguous (unannotated, unrecognized) params before testing.
+        tags = probe_tags(target, adapter, base_ws, sandbox, seed=request.seed)
+        result.inputs_tested = describe_inputs(target, tags=tags)
+        inputs = generate_inputs(target, seed=request.seed, n=request.num_diff_inputs, tags=tags)
+        workload = make_workload(target, seed=request.seed, big=request.workload_size, tags=tags)
 
         baseline, err = record_baseline(base_ws, target, inputs, adapter, sandbox)
         if baseline is None:
