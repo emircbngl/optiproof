@@ -70,7 +70,11 @@ The agent loop (`optiproof/orchestrator.py`), measure → generate → prove:
    - **build** (syntax/compile)
    - **correctness**: existing tests, then **differential testing** — original vs. candidate
      on hundreds of shared inputs; any difference in return value, stdout, or exception
-     type ⇒ reject (with a minimal counterexample fed back to the model).
+     type ⇒ reject (with a minimal counterexample fed back to the model). Unannotated numeric
+     params are exercised with **both int and float** inputs (so a candidate that's correct on
+     ints but wrong on floats is caught), and the report prints the tested input domain. If the
+     generator can't produce inputs the original accepts (e.g. an un-inferred scalar param),
+     the run is reported as **UNBENCHMARKABLE** rather than a confusing error.
    - **speed**: warmup + adaptive sampling, then the **central significance gate** —
      Mann–Whitney U *and* the entire bootstrap CI of the speedup ratio above the threshold.
 3. **Anti-luck** — the winner is re-measured from scratch and demoted if it no longer clears

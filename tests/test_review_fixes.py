@@ -266,3 +266,58 @@ def test_workspace_gather_is_safe_and_targeted(tmp_path):
         assert "big.bin" not in names and "sub" not in names
     finally:
         ws.cleanup()
+
+
+# ---- #2/#3 soundness: ambiguous numeric lists are differential-tested with int AND float ----
+def _run_opt(original_src, symbol, specs):
+    from optiproof.llm.null_provider import NullProvider
+    from optiproof.orchestrator import optimize
+
+    d = Path(tempfile.mkdtemp())
+    f = d / "m.py"
+    f.write_text(original_src)
+    cands = [Candidate(id=i, kind=OptimizeKind.REWRITE, title=i, new_source=s) for i, s in specs]
+    req = OptimizeRequest(
+        path=f, selector=f"{f}::{symbol}", sandbox=SandboxBackend.LOCAL,
+        num_diff_inputs=60, min_runs=6, max_runs=12, max_rounds=1,
+    )
+    return optimize(req, provider=NullProvider(candidates=cands))
+
+
+def test_int_rounding_candidate_rejected_on_float_inputs():
+    # #3a: `coeffs` is unannotated -> ambiguous numeric -> differential spans int AND float, so a
+    # candidate that is correct on ints but truncates floats MUST be rejected (the real-world near-miss).
+    original = "def ssum(coeffs):\n    return sum(c * c for c in coeffs)\n"
+    trap = "def ssum(coeffs):\n    return sum(int(c) * int(c) for c in coeffs)"
+    res = _run_opt(original, "ssum", [("introunding", trap)])
+    assert not res.improved
+    reasons = {r.id: r.reason for r in res.rejected}
+    assert "introunding" in reasons and "behavior changed" in reasons["introunding"].lower()
+    assert "int+float" in res.inputs_tested  # #1: tested domain is reported
+
+
+def test_valid_optimization_accepted_with_mixed_inputs():
+    # #3b: adding float inputs (#2) must NOT falsely reject a genuinely-equivalent win.
+    original = (
+        "def dedup_count(items):\n"
+        "    seen = []\n"
+        "    for x in items:\n"
+        "        if x not in seen:\n"
+        "            seen.append(x)\n"
+        "    return len(seen)\n"
+    )
+    fast = "def dedup_count(items):\n    return len(set(items))"
+    res = _run_opt(original, "dedup_count", [("fast", fast)])
+    assert res.improved and res.best and res.best.id == "fast"
+
+
+def test_scalar_target_is_unbenchmarkable():
+    # A scalar param the generator can't infer gets a list -> original raises on all inputs ->
+    # clear UNBENCHMARKABLE status instead of a confusing traceback.
+    res = _run_opt(
+        "def scale(rho):\n    return rho * 2.0 + 1.0\n",
+        "scale",
+        [("c", "def scale(rho):\n    return rho * 2.0 + 1.0\n")],
+    )
+    assert res.unbenchmarkable
+    assert any("UNBENCHMARKABLE" in n for n in res.notes)

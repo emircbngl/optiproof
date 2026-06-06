@@ -20,8 +20,12 @@ def fmt_time(s: float) -> str:
 def render(result: OptimizationResult) -> str:
     t = result.target
     out: list[str] = [f"OptiProof — {t.file.name}::{t.symbol}   [{result.language} · {result.runtime}]"]
+    if result.inputs_tested:
+        out.append(f"Inputs:    {result.inputs_tested}")
 
-    if result.improved and result.best and result.best.verdict and result.best.measurement:
+    if result.unbenchmarkable:
+        out.append("Status:    UNBENCHMARKABLE")
+    elif result.improved and result.best and result.best.verdict and result.best.measurement:
         v = result.best.verdict
         b = result.baseline
         c = result.best.measurement

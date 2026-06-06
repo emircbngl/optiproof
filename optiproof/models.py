@@ -167,6 +167,8 @@ class OptimizationResult(BaseModel):
     language: str
     runtime: str = ""                     # e.g. "CPython 3.13.5"
     improved: bool = False
+    unbenchmarkable: bool = False         # couldn't establish a baseline (input generation failed)
+    inputs_tested: str = ""               # human summary of the differential input domain
     baseline: Optional[Measurement] = None
 
     # winner (when improved)

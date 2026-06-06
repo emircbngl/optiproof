@@ -28,7 +28,7 @@ from .sandbox.workspace import Workspace
 from .scorer import better_of
 from .verify.correctness import check_candidate
 from .verify.differential import BaselineBehavior, record_baseline
-from .verify.input_gen import generate_inputs, make_workload
+from .verify.input_gen import describe_inputs, generate_inputs, make_workload
 
 
 def _first_line(text: str) -> str:
@@ -113,6 +113,7 @@ def optimize(request: OptimizeRequest, provider: Optional[LLMProvider] = None) -
     provider = provider or LLMProvider.create(request.provider, request.model)
 
     result = OptimizationResult(target=target, language=target.language, runtime=adapter.runtime_label())
+    result.inputs_tested = describe_inputs(target)
     notes: list[str] = []
     base_ws = Workspace.fork_from_file(target.file)
     try:
@@ -131,7 +132,12 @@ def optimize(request: OptimizeRequest, provider: Optional[LLMProvider] = None) -
 
         baseline, err = record_baseline(base_ws, target, inputs, adapter, sandbox)
         if baseline is None:
-            result.notes = [f"cannot run original on generated inputs: {err}"]
+            result.unbenchmarkable = True
+            result.notes = [
+                "UNBENCHMARKABLE — couldn't run the original on generated inputs; the generator likely "
+                "produced the wrong shape/type for a parameter (annotate the params). detail: "
+                + _first_line(err)
+            ]
             return result
         if not baseline.deterministic:
             tail = " — relying on existing tests" if base_tests.has_tests else " — correctness cannot be proven"
@@ -139,17 +145,24 @@ def optimize(request: OptimizeRequest, provider: Optional[LLMProvider] = None) -
 
         raised = sum(1 for o in baseline.observations if not o.ok)
         if baseline.observations and raised == len(baseline.observations):
-            notes.append(
-                f"⚠ original raised on all {len(baseline.observations)} generated inputs — "
-                "input types may be mis-inferred; add type annotations to the parameters"
-            )
+            result.unbenchmarkable = True
+            result.notes = notes + [
+                f"UNBENCHMARKABLE — the original raised on all {len(baseline.observations)} generated "
+                "inputs; the generator couldn't produce inputs it accepts (likely a scalar or "
+                "specially-typed parameter). Annotate the parameters and retry."
+            ]
+            return result
 
         base_meas, err = runner.measure(
             base_ws, target, workload, adapter, sandbox,
             warmup=request.warmup, min_rounds=request.min_runs, max_rounds=request.max_runs,
         )
         if base_meas is None:
-            result.notes = [f"cannot benchmark original: {err}"]
+            result.unbenchmarkable = True
+            result.notes = notes + [
+                "UNBENCHMARKABLE — couldn't benchmark the original (input generation likely produced "
+                "inputs it rejects). detail: " + _first_line(err)
+            ]
             return result
         result.baseline = base_meas
 
